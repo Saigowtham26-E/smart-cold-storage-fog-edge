@@ -1,0 +1,898 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ColdWatch — Cold Storage Monitoring</title>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg: #F4F6FA;
+            --surface: #FFFFFF;
+            --surface-alt: #F0F3F9;
+            --border: #E2E7F1;
+            --text-primary: #0F1724;
+            --text-secondary: #5B6A84;
+            --text-muted: #9AAABB;
+
+            --blue:   #1565C0;
+            --blue-light: #E8F0FE;
+            --cyan:   #0097A7;
+            --cyan-light: #E0F7FA;
+            --amber:  #E65100;
+            --amber-light: #FFF3E0;
+            --green:  #2E7D32;
+            --green-light: #E8F5E9;
+            --red:    #C62828;
+            --red-light: #FFEBEE;
+            --violet: #4527A0;
+            --violet-light: #EDE7F6;
+
+            --chart-temp:   #EF5350;
+            --chart-hum:    #26A69A;
+            --chart-co2:    #FFA726;
+            --chart-power:  #42A5F5;
+
+            --shadow-sm: 0 1px 3px rgba(15,23,36,.06), 0 1px 2px rgba(15,23,36,.04);
+            --shadow-md: 0 4px 12px rgba(15,23,36,.08), 0 2px 4px rgba(15,23,36,.05);
+            --shadow-lg: 0 12px 32px rgba(15,23,36,.10), 0 4px 8px rgba(15,23,36,.06);
+
+            --radius-sm: 6px;
+            --radius:    10px;
+            --radius-lg: 16px;
+        }
+
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'DM Sans', sans-serif;
+            background: var(--bg);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+
+        /* ─── TOPBAR ────────────────────────────────────── */
+        .topbar {
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            padding: 0 32px;
+            height: 64px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .topbar-brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .brand-mark {
+            width: 32px;
+            height: 32px;
+            background: var(--blue);
+            border-radius: var(--radius-sm);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .brand-mark svg { width: 18px; height: 18px; fill: white; }
+
+        .brand-name {
+            font-size: 17px;
+            font-weight: 700;
+            color: var(--text-primary);
+            letter-spacing: -0.3px;
+        }
+
+        .brand-name span { color: var(--blue); }
+
+        .topbar-right {
+            display: flex;
+            align-items: center;
+            gap: 24px;
+        }
+
+        .live-pill {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            background: var(--green-light);
+            border: 1px solid #A5D6A7;
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--green);
+            letter-spacing: 0.5px;
+        }
+
+        .live-dot {
+            width: 7px;
+            height: 7px;
+            background: var(--green);
+            border-radius: 50%;
+            animation: blink 1.4s ease-in-out infinite;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50%       { opacity: 0.25; }
+        }
+
+        .topbar-clock {
+            font-family: 'DM Mono', monospace;
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        .topbar-site {
+            font-size: 13px;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+
+        /* ─── ALERT BAR ─────────────────────────────────── */
+        .alert-bar {
+            background: var(--red);
+            color: #fff;
+            padding: 10px 32px;
+            display: none;
+            align-items: center;
+            gap: 12px;
+            font-size: 13px;
+            font-weight: 500;
+        }
+
+        .alert-bar.visible { display: flex; }
+
+        .alert-bar-label {
+            background: rgba(255,255,255,.2);
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-weight: 700;
+            font-size: 11px;
+            letter-spacing: 0.5px;
+        }
+
+        .alert-bar-count {
+            margin-left: auto;
+            opacity: .8;
+            font-size: 12px;
+        }
+
+        /* No Data Banner */
+        .no-data-banner {
+            background: var(--amber);
+            color: #fff;
+            padding: 10px 32px;
+            display: none;
+            align-items: center;
+            gap: 12px;
+            font-size: 13px;
+            font-weight: 500;
+        }
+
+        .no-data-banner.visible { display: flex; }
+
+        /* ─── PAGE ──────────────────────────────────────── */
+        .page {
+            max-width: 1480px;
+            margin: 0 auto;
+            padding: 28px 32px 40px;
+        }
+
+        .page-header {
+            margin-bottom: 24px;
+        }
+
+        .page-title {
+            font-size: 22px;
+            font-weight: 700;
+            letter-spacing: -0.4px;
+        }
+
+        .page-subtitle {
+            font-size: 13px;
+            color: var(--text-muted);
+            margin-top: 3px;
+        }
+
+        /* ─── KPI GRID ──────────────────────────────────── */
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            gap: 14px;
+            margin-bottom: 24px;
+        }
+
+        .kpi-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            padding: 20px 20px 18px;
+            box-shadow: var(--shadow-sm);
+            position: relative;
+            overflow: hidden;
+            transition: box-shadow .2s;
+        }
+
+        .kpi-card:hover { box-shadow: var(--shadow-md); }
+
+        .kpi-accent {
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 3px;
+        }
+
+        .kpi-label {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: var(--text-muted);
+            margin-bottom: 10px;
+        }
+
+        .kpi-value {
+            font-size: 30px;
+            font-weight: 700;
+            letter-spacing: -1px;
+            line-height: 1;
+            color: var(--text-primary);
+        }
+
+        .kpi-unit {
+            font-size: 13px;
+            font-weight: 400;
+            color: var(--text-secondary);
+            margin-left: 3px;
+        }
+
+        .kpi-meta {
+            font-size: 11.5px;
+            color: var(--text-muted);
+            margin-top: 8px;
+            font-weight: 500;
+        }
+
+        .kpi-alert { color: var(--red); font-weight: 600; }
+        .kpi-ok    { color: var(--green); }
+        .kpi-warn  { color: var(--amber); font-weight: 600; }
+
+        /* ─── CHARTS ────────────────────────────────────── */
+        .charts-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 14px;
+            margin-bottom: 24px;
+        }
+
+        .chart-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            padding: 22px 24px 20px;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .chart-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            margin-bottom: 18px;
+        }
+
+        .chart-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .chart-subtitle {
+            font-size: 11.5px;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+
+        .chart-badge {
+            font-size: 11px;
+            font-weight: 600;
+            padding: 3px 9px;
+            border-radius: 20px;
+        }
+
+        .badge-red    { background: var(--red-light);    color: var(--red);    }
+        .badge-cyan   { background: var(--cyan-light);   color: var(--cyan);   }
+        .badge-amber  { background: var(--amber-light);  color: var(--amber);  }
+        .badge-blue   { background: var(--blue-light);   color: var(--blue);   }
+
+        .chart-wrap { position: relative; height: 230px; }
+
+        /* ─── TABLE ─────────────────────────────────────── */
+        .table-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-sm);
+            overflow: hidden;
+        }
+
+        .table-head {
+            padding: 18px 24px 14px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .table-title {
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .table-count {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .table-scroll { overflow-x: auto; }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        thead th {
+            background: var(--surface-alt);
+            color: var(--text-muted);
+            font-size: 10.5px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.7px;
+            padding: 10px 16px;
+            text-align: left;
+            white-space: nowrap;
+            border-bottom: 1px solid var(--border);
+        }
+
+        tbody td {
+            padding: 11px 16px;
+            border-bottom: 1px solid var(--border);
+            color: var(--text-primary);
+            white-space: nowrap;
+        }
+
+        tbody tr:last-child td { border-bottom: none; }
+
+        tbody tr:hover { background: var(--surface-alt); }
+
+        .device-id {
+            font-family: 'DM Mono', monospace;
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--blue);
+            background: var(--blue-light);
+            padding: 2px 7px;
+            border-radius: 4px;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            padding: 3px 8px;
+            border-radius: 4px;
+        }
+
+        .badge-ok      { background: var(--green-light); color: var(--green); }
+        .badge-high    { background: var(--red-light);   color: var(--red);   }
+        .badge-open    { background: var(--amber-light);  color: var(--amber); }
+        .badge-closed  { background: var(--surface-alt);  color: var(--text-secondary); }
+
+        .badge-dot {
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+            background: currentColor;
+        }
+
+        .no-data-message {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-muted);
+            font-size: 14px;
+        }
+
+        /* ─── RESPONSIVE ────────────────────────────────── */
+        @media (max-width: 1200px) {
+            .kpi-grid   { grid-template-columns: repeat(3, 1fr); }
+            .charts-grid { grid-template-columns: 1fr; }
+        }
+
+        @media (max-width: 768px) {
+            .page       { padding: 16px; }
+            .topbar     { padding: 0 16px; }
+            .kpi-grid   { grid-template-columns: repeat(2, 1fr); }
+            .topbar-site { display: none; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- TOPBAR -->
+<header class="topbar">
+    <div class="topbar-brand">
+        <div class="brand-mark">
+            <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z"/></svg>
+        </div>
+        <span class="brand-name">Cold<span>Watch</span></span>
+    </div>
+    <div class="topbar-right">
+        <span class="topbar-site">Facility: Warehouse A</span>
+        <div class="live-pill">
+            <div class="live-dot"></div>
+            LIVE
+        </div>
+        <span class="topbar-clock" id="clock">--:--:--</span>
+    </div>
+</header>
+
+<!-- ALERT BAR -->
+<div class="alert-bar" id="alertBar">
+    <span class="alert-bar-label">ALERT</span>
+    <span id="alertMsg">High temperature detected in one or more units.</span>
+    <span class="alert-bar-count" id="alertMsgCount"></span>
+</div>
+
+<!-- NO DATA BANNER -->
+<div class="no-data-banner" id="noDataBanner">
+    <span>⚠️</span>
+    <span>No sensor data available in DynamoDB. Waiting for data stream...</span>
+</div>
+
+<!-- PAGE BODY -->
+<main class="page">
+
+    <div class="page-header">
+        <div class="page-title">Real-time Cold Storage Monitor</div>
+        <div class="page-subtitle">Continuous sensor telemetry — updates every 2 seconds from DynamoDB</div>
+    </div>
+
+    <!-- KPI CARDS -->
+    <div class="kpi-grid">
+        <div class="kpi-card">
+            <div class="kpi-accent" style="background: var(--chart-temp);"></div>
+            <div class="kpi-label">Avg Temperature</div>
+            <div class="kpi-value"><span id="kpiTemp">--</span><span class="kpi-unit">°C</span></div>
+            <div class="kpi-meta" id="kpiTempMeta">—</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-accent" style="background: var(--chart-hum);"></div>
+            <div class="kpi-label">Avg Humidity</div>
+            <div class="kpi-value"><span id="kpiHum">--</span><span class="kpi-unit">%</span></div>
+            <div class="kpi-meta">Relative humidity</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-accent" style="background: var(--chart-co2);"></div>
+            <div class="kpi-label">Avg CO₂ Level</div>
+            <div class="kpi-value"><span id="kpiCO2">--</span><span class="kpi-unit">ppm</span></div>
+            <div class="kpi-meta">Normal &lt; 1000 ppm</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-accent" style="background: var(--chart-power);"></div>
+            <div class="kpi-label">Avg Power Draw</div>
+            <div class="kpi-value"><span id="kpiPower">--</span><span class="kpi-unit">kW</span></div>
+            <div class="kpi-meta">All active units</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-accent" style="background: var(--violet);"></div>
+            <div class="kpi-label">Active Devices</div>
+            <div class="kpi-value"><span id="kpiDevices">--</span></div>
+            <div class="kpi-meta">Online &amp; reporting</div>
+        </div>
+        <div class="kpi-card">
+            <div class="kpi-accent" style="background: var(--red);"></div>
+            <div class="kpi-label">Active Alerts</div>
+            <div class="kpi-value kpi-alert" id="kpiAlerts">0</div>
+            <div class="kpi-meta" id="kpiAlertMeta" style="color: var(--green);">All systems normal</div>
+        </div>
+    </div>
+
+    <!-- CHARTS -->
+    <div class="charts-grid">
+        <div class="chart-card">
+            <div class="chart-header">
+                <div>
+                    <div class="chart-title">Temperature</div>
+                    <div class="chart-subtitle">Averaged across all sensors — °C</div>
+                </div>
+                <span class="chart-badge badge-red">TEMP</span>
+            </div>
+            <div class="chart-wrap"><canvas id="chartTemp"></canvas></div>
+        </div>
+
+        <div class="chart-card">
+            <div class="chart-header">
+                <div>
+                    <div class="chart-title">Relative Humidity</div>
+                    <div class="chart-subtitle">Averaged across all sensors — %</div>
+                </div>
+                <span class="chart-badge badge-cyan">RH</span>
+            </div>
+            <div class="chart-wrap"><canvas id="chartHum"></canvas></div>
+        </div>
+
+        <div class="chart-card">
+            <div class="chart-header">
+                <div>
+                    <div class="chart-title">CO₂ Concentration</div>
+                    <div class="chart-subtitle">Averaged across all sensors — ppm</div>
+                </div>
+                <span class="chart-badge badge-amber">CO₂</span>
+            </div>
+            <div class="chart-wrap"><canvas id="chartCO2"></canvas></div>
+        </div>
+
+        <div class="chart-card">
+            <div class="chart-header">
+                <div>
+                    <div class="chart-title">Power Consumption</div>
+                    <div class="chart-subtitle">Averaged across all units — kW</div>
+                </div>
+                <span class="chart-badge badge-blue">POWER</span>
+            </div>
+            <div class="chart-wrap"><canvas id="chartPower"></canvas></div>
+        </div>
+    </div>
+
+    <!-- TABLE -->
+    <div class="table-card">
+        <div class="table-head">
+            <span class="table-title">Latest Sensor Readings</span>
+            <span class="table-count" id="tableCount">— devices</span>
+        </div>
+        <div class="table-scroll">
+            <table id="dataTable">
+                <thead>
+                    <tr>
+                        <th>Device ID</th>
+                        <th>Temp (°C)</th>
+                        <th>Humidity (%)</th>
+                        <th>CO₂ (ppm)</th>
+                        <th>Power (kW)</th>
+                        <th>Door</th>
+                        <th>Temp Status</th>
+                        <th>CO₂ Status</th>
+                        <th>Power Status</th>
+                        <th>Time</th>
+                    </tr>
+                </thead>
+                <tbody id="tableBody">
+                    <tr><td colspan="10" class="no-data-message">Waiting for sensor data from DynamoDB...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+</main>
+
+<script>
+/* ────────────────────────────────────────────────────────
+   CHART SETUP
+──────────────────────────────────────────────────────── */
+const MAX_POINTS = 30;
+
+const chartDefaults = {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: { duration: 350, easing: 'easeInOutQuart' },
+    interaction: { mode: 'index', intersect: false },
+    plugins: {
+        legend: { display: false },
+        tooltip: {
+            backgroundColor: '#0F1724',
+            titleColor: '#9AAABB',
+            bodyColor: '#FFFFFF',
+            padding: 10,
+            borderRadius: 6,
+            titleFont: { family: 'DM Sans', size: 11 },
+            bodyFont: { family: 'DM Mono', size: 12, weight: '500' },
+        }
+    },
+    scales: {
+        x: {
+            grid:  { color: '#E2E7F1', drawBorder: false },
+            ticks: { color: '#9AAABB', font: { family: 'DM Mono', size: 10 }, maxRotation: 45, maxTicksLimit: 10 },
+        },
+        y: {
+            grid:  { color: '#E2E7F1', drawBorder: false },
+            ticks: { color: '#9AAABB', font: { family: 'DM Mono', size: 10 } },
+            beginAtZero: false,
+        }
+    }
+};
+
+function makeChart(id, color, label) {
+    const ctx = document.getElementById(id).getContext('2d');
+    const grad = ctx.createLinearGradient(0, 0, 0, 230);
+    grad.addColorStop(0, color + '28');
+    grad.addColorStop(1, color + '00');
+    return new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [{
+                label,
+                data: [],
+                borderColor: color,
+                backgroundColor: grad,
+                borderWidth: 2,
+                pointRadius: 0,
+                pointHoverRadius: 4,
+                pointHoverBackgroundColor: color,
+                fill: true,
+                tension: 0.4,
+            }]
+        },
+        options: JSON.parse(JSON.stringify(chartDefaults)),
+    });
+}
+
+const charts = {
+    temp:  makeChart('chartTemp',  '#EF5350', 'Temperature (°C)'),
+    hum:   makeChart('chartHum',   '#26A69A', 'Humidity (%)'),
+    co2:   makeChart('chartCO2',   '#FFA726', 'CO₂ (ppm)'),
+    power: makeChart('chartPower', '#42A5F5', 'Power (kW)'),
+};
+
+function pushToChart(chart, label, value) {
+    const d = chart.data;
+    d.labels.push(label);
+    d.datasets[0].data.push(value);
+    if (d.labels.length > MAX_POINTS) {
+        d.labels.shift();
+        d.datasets[0].data.shift();
+    }
+    chart.update('none');
+}
+
+function resetCharts() {
+    Object.values(charts).forEach(chart => {
+        chart.data.labels = [];
+        chart.data.datasets[0].data = [];
+        chart.update();
+    });
+}
+
+/* ────────────────────────────────────────────────────────
+   DOM HELPERS
+──────────────────────────────────────────────────────── */
+function el(id) { return document.getElementById(id); }
+
+function badge(status, type) {
+    if (type === 'door') {
+        return status === 'OPEN'
+            ? `<span class="badge badge-open"><span class="badge-dot"></span>Open</span>`
+            : `<span class="badge badge-closed"><span class="badge-dot"></span>Closed</span>`;
+    }
+    return status === 'HIGH'
+        ? `<span class="badge badge-high"><span class="badge-dot"></span>HIGH</span>`
+        : `<span class="badge badge-ok"><span class="badge-dot"></span>Normal</span>`;
+}
+
+function updateTable(rows) {
+    if (!rows || rows.length === 0) {
+        el('tableCount').textContent = '0 devices';
+        el('tableBody').innerHTML = '<tr><td colspan="10" class="no-data-message">No sensor data available in DynamoDB</td></tr>';
+        return;
+    }
+    
+    el('tableCount').textContent = `${rows.length} devices`;
+    el('tableBody').innerHTML = rows.map(r => `
+        <tr>
+            <td><span class="device-id">${r.device_id || 'N/A'}</span></td>
+            <td>${r.temperature || '--'}</td>
+            <td>${r.humidity || '--'}</td>
+            <td>${r.co2_level || '--'}</td>
+            <td>${r.power_usage || '--'}</td>
+            <td>${badge(r.door_status || 'CLOSED', 'door')}</td>
+            <td>${badge(r.temp_status || 'NORMAL')}</td>
+            <td>${badge(r.co2_status || 'NORMAL')}</td>
+            <td>${badge(r.power_status || 'NORMAL')}</td>
+            <td style="font-family:'DM Mono',monospace;font-size:12px;color:var(--text-muted)">
+                ${r.timestamp ? new Date(r.timestamp).toLocaleTimeString() : '--'}
+            </td>
+        </tr>
+    `).join('');
+}
+
+function updateKPI(stats) {
+    if (!stats || stats.no_data) {
+        el('kpiTemp').textContent = '--';
+        el('kpiHum').textContent = '--';
+        el('kpiCO2').textContent = '--';
+        el('kpiPower').textContent = '--';
+        el('kpiDevices').textContent = '0';
+        el('kpiAlerts').textContent = '0';
+        el('kpiTempMeta').textContent = 'No data';
+        el('kpiAlertMeta').textContent = 'Waiting for data';
+        return;
+    }
+    
+    el('kpiTemp').textContent    = stats.avg_temperature || '--';
+    el('kpiHum').textContent     = stats.avg_humidity || '--';
+    el('kpiCO2').textContent     = stats.avg_co2 || '--';
+    el('kpiPower').textContent   = stats.avg_power || '--';
+    el('kpiDevices').textContent = stats.unique_devices || '0';
+    el('kpiAlerts').textContent  = stats.alerts || '0';
+
+    // Temperature status
+    const t = stats.avg_temperature;
+    const meta = el('kpiTempMeta');
+    if (t > 8)      { meta.textContent = 'Above normal range';  meta.className = 'kpi-meta kpi-alert'; }
+    else if (t < 0) { meta.textContent = 'Below freezing point'; meta.className = 'kpi-meta kpi-warn'; }
+    else            { meta.textContent = 'Within normal range'; meta.className = 'kpi-meta kpi-ok'; }
+
+    // Alert state
+    const alertMeta = el('kpiAlertMeta');
+    if (stats.alerts > 0) {
+        alertMeta.textContent = `${stats.alerts} issue(s) detected`;
+        alertMeta.style.color = 'var(--red)';
+        el('alertBar').classList.add('visible');
+        el('alertMsg').textContent = `${stats.alerts} alert(s) active — check devices immediately.`;
+        el('alertMsgCount').textContent = `${stats.alerts} active alert(s)`;
+    } else {
+        alertMeta.textContent = 'All systems normal';
+        alertMeta.style.color = 'var(--green)';
+        el('alertBar').classList.remove('visible');
+    }
+}
+
+function updateTimeseries(timeseriesData) {
+    if (!timeseriesData || timeseriesData.length === 0) {
+        return;
+    }
+    
+    timeseriesData.forEach(point => {
+        const label = point.timestamp ? new Date(point.timestamp).toLocaleTimeString() : '--';
+        pushToChart(charts.temp, label, point.temperature);
+        pushToChart(charts.hum, label, point.humidity);
+        pushToChart(charts.co2, label, point.co2_level);
+        pushToChart(charts.power, label, point.power_usage);
+    });
+}
+
+/* ────────────────────────────────────────────────────────
+   CLOCK
+──────────────────────────────────────────────────────── */
+function tickClock() {
+    el('clock').textContent = new Date().toLocaleTimeString('en-IN', { hour12: false });
+}
+tickClock();
+setInterval(tickClock, 1000);
+
+/* ────────────────────────────────────────────────────────
+   SSE REAL-TIME CONNECTION TO DYNAMODB
+──────────────────────────────────────────────────────── */
+let isConnected = false;
+
+function connectSSE() {
+    const source = new EventSource('/api/stream');
+    
+    source.onopen = function() {
+        console.log('SSE connection established');
+        isConnected = true;
+        el('noDataBanner').classList.remove('visible');
+    };
+    
+    source.onmessage = function(e) {
+        try {
+            const payload = JSON.parse(e.data);
+            
+            if (payload.no_data || (payload.data && payload.data.length === 0)) {
+                // No data in DynamoDB
+                el('noDataBanner').classList.add('visible');
+                updateTable([]);
+                if (payload.stats) updateKPI(payload.stats);
+                return;
+            }
+            
+            // Hide no-data banner
+            el('noDataBanner').classList.remove('visible');
+            
+            // Update table with latest data
+            if (payload.data) updateTable(payload.data);
+            
+            // Update KPI stats
+            if (payload.stats) updateKPI(payload.stats);
+            
+            // Update charts with timeseries data
+            if (payload.timeseries && payload.timeseries.length > 0) {
+                // Clear and reload charts with new data
+                const lastPoint = payload.timeseries[payload.timeseries.length - 1];
+                if (lastPoint) {
+                    const label = lastPoint.timestamp ? new Date(lastPoint.timestamp).toLocaleTimeString() : '--';
+                    pushToChart(charts.temp, label, lastPoint.temperature);
+                    pushToChart(charts.hum, label, lastPoint.humidity);
+                    pushToChart(charts.co2, label, lastPoint.co2_level);
+                    pushToChart(charts.power, label, lastPoint.power_usage);
+                }
+            }
+            
+            tickClock();
+        } catch (error) {
+            console.error('Error parsing SSE data:', error);
+        }
+    };
+    
+    source.onerror = function(e) {
+        console.error('SSE connection error, reconnecting in 5 seconds...');
+        isConnected = false;
+        source.close();
+        setTimeout(connectSSE, 5000);
+    };
+    
+    return source;
+}
+
+/* ────────────────────────────────────────────────────────
+   INITIAL LOAD FROM DYNAMODB
+──────────────────────────────────────────────────────── */
+async function initialLoad() {
+    try {
+        // Load stats
+        const statsRes = await fetch('/api/stats');
+        const stats = await statsRes.json();
+        updateKPI(stats);
+        
+        // Load table data
+        const dataRes = await fetch('/api/data');
+        const dataJson = await dataRes.json();
+        
+        if (dataJson.error || !dataJson.data || dataJson.data.length === 0) {
+            updateTable([]);
+            el('noDataBanner').classList.add('visible');
+        } else {
+            updateTable(dataJson.data);
+            el('noDataBanner').classList.remove('visible');
+        }
+        
+        // Load timeseries for charts
+        const tsRes = await fetch('/api/timeseries');
+        const timeseries = await tsRes.json();
+        
+        if (timeseries.temperatures && timeseries.temperatures.length > 0) {
+            resetCharts();
+            for (let i = 0; i < timeseries.temperatures.length; i++) {
+                const label = timeseries.timestamps[i] || `Point ${i+1}`;
+                pushToChart(charts.temp, label, timeseries.temperatures[i]);
+                pushToChart(charts.hum, label, timeseries.humidities[i]);
+                pushToChart(charts.co2, label, timeseries.co2_levels[i]);
+                pushToChart(charts.power, label, timeseries.power_usages[i]);
+            }
+        }
+        
+        tickClock();
+    } catch (error) {
+        console.error('Initial load error:', error);
+        el('noDataBanner').classList.add('visible');
+    }
+}
+
+// Start the application
+initialLoad();
+connectSSE();
+</script>
+</body>
+</html>
